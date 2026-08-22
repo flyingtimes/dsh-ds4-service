@@ -4,6 +4,18 @@ DeepSeek Harness **DS4 服务控制插件**：在 Web GUI 侧栏一键**开启 /
 
 一句话：`DS4 服务面板 → 改参数 → 保存 → 启动/重启/停止`，全程不手敲命令行、不改动你手调的 start.sh。
 
+## 界面预览
+
+截图均取自真实 GUI（ds4-server 运行中状态）。面板跟随 DSH 通用设置的深浅主题**即时切换，无需刷新页面**：
+
+| 深色 · 控制页 | 深色 · 参数页 |
+| :---: | :---: |
+| ![深色主题 · 控制页](docs/dark-control.png) | ![深色主题 · 参数页](docs/dark-params.png) |
+
+| 浅色 · 控制页 | 浅色 · 参数页 |
+| :---: | :---: |
+| ![浅色主题 · 控制页](docs/light-control.png) | ![浅色主题 · 参数页](docs/light-params.png) |
+
 ## 功能总览
 
 | 类别 | 能力 |
@@ -26,6 +38,7 @@ dsh-ds4-plugin/
 ├── client.js             # 客户端（React）：侧栏入口 + 控制面板（双主题 UI）
 ├── config.json           # 运行配置（GUI 保存写回这里）
 ├── config.example.json   # 配置模板（含逐项 _comment）
+├── docs/                 # README 界面截图（深/浅主题 × 控制/参数页）
 ├── assets/
 │   ├── ds4-server        # 自带的 ds4 二进制（arm64）
 │   ├── start.sh          # 自带的启动脚本（与项目里手调版同源）
