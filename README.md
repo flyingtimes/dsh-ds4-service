@@ -396,6 +396,95 @@ node test/render-smoke.mjs  # 客户端组件树渲染冒烟（两标签页 × �
 - **模型路径**：相对路径相对于 `serviceDir`；跨项目请用绝对路径。
 - **点启动报 already running**：已被新版修复（启动幂等 + 孤儿清理）。若仍出现，说明有 pid 文件之外的残留进程，插件停止操作会自动清掉它。
 
+## 通过 AI 构建的过程
+
+本插件不是一次成型的，而是在 DSH 会话中由用户逐条下达指令、AI 逐步迭代完成的。以下按时间顺序记录**每一步指令 → 实际落地**的全过程与最终产物，作为可追溯的构建日志。
+
+> 时间均为 `Asia/Shanghai`；提交号为对应 git commit。
+
+### 第 1 步 — 初始化插件
+**指令：** 帮我写一个 dsh 插件：在 ~/code/ds4-on-mac 项目下有我的 ds4 服务。写一个界面可控制服务的开启、重启、关闭，可配置 start.sh 脚本中的各个参数。插件自带 ds4 的二进制启动程序和启动脚本。整个插件使用 nodejs 撰写。
+
+**实际执行：** 创建完整插件工程：`package.json`（name `dsh-ds4-service`，声明 `dsh.bundle.patch` / `dsh.client.platform:"web"` / `dsh.client.inject` / `immediately:true`）、`cordis.patch.yml`（注册插件 id `ds4-service`）、服务端 `index.js`（约 600 行：默认配置、`findServerProcesses` 进程扫描、`getStatus/doStart/doStop/doRestart`、webServer 路由）、客户端 `client.js`（React + 控制/参数两个标签页）、`config.json`/`config.example.json`、`assets/ds4-server`（arm64 二进制）+ `assets/start.sh`、`test/` 下的守卫与渲染测试，并以 `link:` 方式安装进 `~/.dsh/profiles/web` profile。提交 `e75195e feat: dsh-ds4-service v0.1.0`。
+
+### 第 2 步 — 修复"点击启动没反应"
+**指令：** 插件点击启动后没反应；随后贴出错误：`process is already running (pid 8497); refusing to start ds4`。
+
+**实际执行：** 根因是服务其实已在运行但 pid 文件为空，插件误判"已停止"，start.sh 重新 spawn 被二进制单例锁拒绝。修复为：基于进程扫描的状态判定 + pid 文件自愈 + 幂等启动（已在运行则视为成功）+ `doStop` 孤儿进程清理。启动/重启链路不再误报。
+
+### 第 3 步 — 精简状态信息
+**指令：** 启动按键上方呈现的信息太冗余了，我只要看到运行状态、pid、端口、项目路径就行。
+
+**实际执行：** 状态区精简为运行状态点、运行中/已停止、PID/端口/上下文/线程、serviceDir 路径，删除 `lastAction / lastDetail / command-line` 冗余展示。
+
+### 第 4 步 — shadcn UI 重设计
+**指令：** https://ui.shadcn.com/docs 到这里学习一些漂亮的 ui 的制作方法。然后把本插件的 ui 设计得更加漂亮合理。
+
+**实际执行：** 学习 shadcn 设计体系后重做界面：语义 token、Card/Button/Switch 组件规范、分段式 Tabs、状态机按钮、终端风格日志卡、毛玻璃保存条。
+
+### 第 5 步 — 增加立体感
+**指令：** 很好，现在好看多了。我希望界面更加有立体感一些，帮我改一下。
+
+**实际执行：** 加入深度/3D 质感：渐变 + 顶部 `inset` 高光 + 按下 `translateY` + 内阴影；输入框做下沉式凹陷背景。
+
+### 第 6 步 — 安全审计
+**指令：** 检查一下当前项目有没有安全隐患问题。
+
+**实际执行：** 通过 live 攻击探针查出 4 个隐患并修复：`text/plain` CSRF POST、伪造 Origin、伪造 Host（`evil.example:3080`）可读配置、`Sec-Fetch-Site: cross-site` 放行。修复为 `buildAllowedAuthorities/requestTrusted` 白名单守卫（跨站/伪造 Host/Origin 一律 403）、控制路由并发互斥 409、响应 `no-store`/`nosniff`、配置 `0600` 落盘。`test/guard-test.mjs` 11 例矩阵通过。
+
+### 第 7 步 — 深/浅色主题自动切换
+**指令：** 目前 ui 适配的是深色模式的界面，请给浅色模式也定义界面，并且插件随着系统界面设置变化自动切换深色、浅色模式。（澄清：我指的是 tsh 里面通用设置里面的神色、浅色机制；随后：重启了 / 浅色模式下，服务日志也应该是浅底色）
+
+**实际执行：** 排查 DSH 的 `dsh-client-ui-theme`（ThemeRuntime 解析 `ui-theme.preference`：light/dark/system）与 `dsh-client-ui-layout`（ThemePresenter 通过 `body[data-ds-dark-theme]` 属性 + `documentElement.colorScheme` 应用主题），以 `body[data-ds-dark-theme]` 为深色判别，为插件 CSS 定义双套 token（默认浅色、深色覆盖），日志卡浅色模式同步浅底色。
+
+### 第 8 步 — 撰写 README 并首次提交 GitHub
+**指令：** 为这个插件撰写 readme 文件。把从 shadcn 借鉴的知识框架和 tsh 深色浅色管理机制也写进说明里面。帮我把代码提交到我的 github 公开仓库。
+
+**实际执行：** 撰写 README 并首次提交到公开仓库 `https://github.com/flyingtimes/dsh-ds4-service.git`。
+
+### 第 9 步 — 模型下载脚本
+**指令：** 在 assets 下面添加一个 download.sh，脚本可以把模型下载在 assets 目录下。写好就行，不用测试避免占用磁盘空间。默认配置文件指向这个模型的 assets 下的路径。更新 readme，提交代码到 github 仓库。
+
+**实际执行：** 新增 `assets/download.sh`（hf-mirror/aria2c、断点续传 + sha-256 校验），默认配置 `model`/`mtp` 指向 `{{assets}}/` 路径，更新 README 并提交 `f49e0f3 feat: 模型下载脚本 + {{assets}} 占位符`。
+
+### 第 10 步 — 启动按钮着色器动效
+**指令：** https://html-in-canvas.dev/demos/css-to-shader/ 学习这个案例，当点击 ds4 启动按钮的时候，在插件页面实现这个效果。
+
+**实际执行：** 学习 CSS-to-Shader 案例，移植"点击启动按钮"的着色器动效（DOM→canvas→WebGL 纹理→片元着色器→overlay），Chromium 147+ 用 `drawElementImage` 采样真实面板，其余浏览器回退程序化 HUD。提交 `1904045 feat: 启动按钮 CSS-to-Shader 着色器动效`。
+
+### 第 11 步 — 重启/停止按钮同类特效
+**指令：** 好，现在给重启和停止按钮也使用类似的特效。
+
+**实际执行：** 给重启、停止按钮接入各自对应模式的着色器动效（一份 GLSL 参数化 `u_mode/u_settleT/u_collapse`，启动=BOOT 渐强、重启=先降后升、停止=CRT 断电坍缩）。提交 `dd882f8 feat: 重启/停止按钮接入对应模式的着色器动效`。
+
+### 第 12 步 — 动效经验写入 README
+**指令：** 更新 readme 文件，把如何参考 css-to-shader 案例、学习后制作按钮特效的经验也记录到 readme 中。
+
+**实际执行：** 在 README 新增"从案例到落地：学习方法与迁移经验"一节（读懂源码→数据流管线→迁移决策→心法→踩坑）。提交 `bc4e09b docs: README 记录 CSS-to-Shader 案例的学习方法与迁移经验`。
+
+### 第 13 步 — 录屏加入 README
+**指令：** 把启动、停止的过程录制成视频，加入 readme 文件中。
+
+**实际执行：** 用 Playwright 驱动 Chromium 操作真实 GUI，录制启动（10.3s）/停止（0.7s）真实动效视频并放入 README。提交 `d00dab7 docs: README 加入启动/停止动效真实录屏`。
+
+### 第 14 步 — 改用 GIF 便于 GitHub 展现
+**指令：** 使用 gif 动图来替代录制的 mp4，方便 github 直接展现。
+
+**实际执行：** 将录屏替换为 GIF 动图（`docs/demo-start.gif`、`demo-stop.gif`），GitHub 可直接内嵌展示。提交 `1d5d1d5 docs: 动效演示改用 GIF,便于 GitHub 直接展现`。
+
+### 最终产物
+
+- `package.json` / `cordis.patch.yml` — DSH 插件声明与 bundle 补丁（插件 id `ds4-service`）
+- `index.js` — 服务端（Node）：服务控制 + 状态检测 + HTTP 路由 + 安全守卫
+- `client.js` — 客户端（React）：侧栏入口 + 控制面板（深浅双主题 UI + 按钮着色器动效）
+- `config.json` / `config.example.json` — 运行配置与模板（含逐项 `_comment`）
+- `assets/` — 自带 `ds4-server` 二进制 + `start.sh` + `download.sh` 模型下载脚本
+- `docs/` — 深/浅主题 × 控制/参数页截图 + 启动/停止 GIF 动效演示
+- `test/` — 安全守卫攻击矩阵（11 用例）+ 客户端渲染冒烟（4 用例），保持通过
+- `README.md` — 本文档（含 shadcn 设计体系、深浅主题机制、CSS-to-Shader 动效经验、构建过程）
+
+全部代码已推送到公开仓库 `https://github.com/flyingtimes/dsh-ds4-service.git`（MIT 协议）。
+
 ## License
 
 [MIT](LICENSE)
