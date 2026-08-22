@@ -1,5 +1,5 @@
 /**
- * dsh-ds4-service — 客户端（Web GUI）。
+ * @clarkchan/dsh-ds4-service — 客户端（Web GUI）。
  *
  * UI 遵循 shadcn/ui 设计体系（映射到 DSH 主题别名变量）：
  *   - 语义 design token：--ds4-bg(背景) / --ds4-card(卡片,亮一档) /
@@ -14,7 +14,7 @@
  * 纯 React 薄壳 + fetch；不依赖其他客户端包。
  */
 window.__ModuleLoader__.load({
-  id: "dsh-ds4-service",
+  id: "@clarkchan/dsh-ds4-service",
   factory: (require) => {
     var module = { exports: {} };
     var exports = module.exports;
@@ -267,7 +267,7 @@ window.__ModuleLoader__.load({
     ].join("\n");
     try {
       var styleEl = document.createElement("style");
-      styleEl.setAttribute("data-plugin", "dsh-ds4-service");
+      styleEl.setAttribute("data-plugin", "@clarkchan/dsh-ds4-service");
       styleEl.textContent = CSS;
       document.head.appendChild(styleEl);
     } catch (e) { /* SSR/测试环境 */ }

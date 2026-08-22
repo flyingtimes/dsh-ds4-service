@@ -4,4 +4,4 @@
 # listed in package.json's dsh.profile.bundles) — no manual editing needed.
 - insert:
     - id: ds4-service
-      name: 'dsh-ds4-service'
+      name: '@clarkchan/dsh-ds4-service'

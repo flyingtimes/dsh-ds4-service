@@ -1,5 +1,5 @@
 /**
- * dsh-ds4-service — DS4 服务控制插件（服务端）。
+ * @clarkchan/dsh-ds4-service — DS4 服务控制插件（服务端）。
  *
  * 在 DSH Web GUI 里开启 / 重启 / 关闭 ds4-server，并可视化配置 start.sh 的
  * 全部启动参数。插件自带 ds4-server 二进制与 start.sh（assets/），可部署到
