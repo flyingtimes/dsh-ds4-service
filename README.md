@@ -20,7 +20,7 @@ DeepSeek Harness **DS4 服务控制插件**：在 Web GUI 侧栏一键**开启 /
 
 | ▶ 启动（冷开机 · BOOT） | ⏹ 停止（SHUTDOWN · CRT 断电坍缩） |
 | :---: | :---: |
-| ![启动动效演示](docs/demo-start.mp4) | ![停止动效演示](docs/demo-stop.mp4) |
+| ![启动动效演示](docs/demo-start.gif) | ![停止动效演示](docs/demo-stop.gif) |
 
 ## 功能总览
 

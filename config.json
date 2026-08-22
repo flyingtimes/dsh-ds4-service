@@ -1,7 +1,7 @@
 {
   "serviceDir": "/Users/clark/code/ds4-on-mac",
   "model": "ds4flash.gguf",
-  "port": 8192,
+  "port": 8000,
   "ctx": 393216,
   "threads": 20,
   "kvDir": "/Users/clark/.ds4/server-kv",
