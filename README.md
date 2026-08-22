@@ -1,8 +1,26 @@
-# dsh-ds4-service 🛰
+# @clarkchan/dsh-ds4-service 🛰
 
 DeepSeek Harness **DS4 服务控制插件**：在 Web GUI 侧栏一键**开启 / 重启 / 关闭** ds4-server，并可视化配置 `start.sh` 的全部启动参数。插件**自带 ds4-server 二进制与启动脚本**（`assets/`），可部署到任意目录实现完全自包含，默认直接驱动 `~/code/ds4-on-mac` 项目。纯 Node.js 实现，无运行时依赖。
 
 一句话：`DS4 服务面板 → 改参数 → 保存 → 启动/重启/停止`，全程不手敲命令行、不改动你手调的 start.sh。
+
+## 快速开始
+
+插件已发布到 npm：[`@clarkchan/dsh-ds4-service`](https://www.npmjs.com/package/@clarkchan/dsh-ds4-service)。**一条命令即可安装**：
+
+```bash
+dsh plugin --profile web add @clarkchan/dsh-ds4-service
+```
+
+三步开始使用：
+
+1. **安装**（上面的命令）—— 插件自带 `ds4-server` 二进制与 `start.sh`，无需预先准备；
+2. **重启** `dsh web` —— 侧栏即出现「DS4 服务」入口（绿点=运行 / 灰点=停止）；
+3. **下载模型** —— 首次启动前执行 `assets/download.sh`（约 96 GB，见[模型下载](#模型下载assetsdownloadsh)），或把 `model` 配置指向你已有的模型路径。
+
+> 默认配置完全可移植：`serviceDir` 默认 `~/code/ds4-on-mac`（不存在时自动部署自带资产，自包含运行），`kvDir` 默认 `~/.ds4/server-kv`，均支持 `~/` 写法。
+>
+> 想改参数？打开面板「参数」页可视化编辑并保存即可，无需手动改文件。从源码安装 / 本地开发见[安装（进阶）](#安装进阶)。
 
 ## 界面预览
 
@@ -326,19 +344,11 @@ body[data-ds-dark-theme] .ds4-launch {
 
 完整逐项说明见 [`config.example.json`](config.example.json) 的 `_comment`。
 
-## 安装
+## 安装（进阶）
 
-### 一键安装（npm）
+一键安装方式见开头[快速开始](#快速开始)。本节补充说明与源码安装。
 
-已发布到 npm：[`dsh-ds4-service`](https://www.npmjs.com/package/dsh-ds4-service)，一条命令安装进 web profile：
-
-```bash
-dsh plugin --profile web add dsh-ds4-service
-```
-
-安装后重启 `dsh web`，侧栏即出现「DS4 服务」入口。插件自带 `ds4-server` 二进制与 `start.sh`；首次启动前把模型下载到 `assets/`（见[模型下载](#模型下载assetsdownloadsh)），或把 `model` 配置指向你已有的模型路径。
-
-> 默认配置完全可移植：`serviceDir` 默认 `~/code/ds4-on-mac`（不存在时自动部署自带资产，自包含运行），`kvDir` 默认 `~/.ds4/server-kv`，均支持 `~/` 写法。
+> 旧的无 scope 包名 `dsh-ds4-service` 已弃用（deprecated），安装时会提示改用本包。
 
 ### 从源码安装（本地开发）
 
@@ -358,9 +368,9 @@ pnpm --dir ~/.dsh/profiles/web add --link ~/code/dsh-ds4-plugin
 ```json
 {
   "dependencies": {
-    "dsh-ds4-service": "link:~/code/dsh-ds4-plugin"
+    "@clarkchan/dsh-ds4-service": "link:~/code/dsh-ds4-plugin"
   },
-  "dsh": { "profile": { "bundles": [ "...", "dsh-ds4-service" ] } }
+  "dsh": { "profile": { "bundles": [ "...", "@clarkchan/dsh-ds4-service" ] } }
 }
 ```
 
