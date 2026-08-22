@@ -24,7 +24,7 @@ DeepSeek Harness **DS4 服务控制插件**：在 Web GUI 侧栏一键**开启 /
 | ⚙️ 参数可视化 | 表单配置 start.sh 全部参数：模型、端口、上下文、线程、KV 目录/上限、DSpark 配套模型、预热权重等 |
 | 📜 实时日志 | 面板内滚动查看 `serviceDir/logs/ds4-server.err|.log`，自动滚底、成功/失败行着色 |
 | 🌗 深浅双模式 | 完整跟随 DSH 通用设置的 深色 / 浅色 / 跟随系统，即时切换无需刷新 |
-| 🎛 启动着色器动效 | 点击「启动」播放 WebGL CSS-to-Shader 动效（CRT/色差/故障/光环），全浏览器降级兼容 |
+| 🎛 控制着色器动效 | 启动/重启/停止按钮均触发 WebGL CSS-to-Shader 动效（CRT/色差/故障/断电坍缩），全浏览器降级兼容 |
 | 📦 自带资产 | 插件携带 `assets/ds4-server` 二进制 + `assets/start.sh` + `assets/download.sh` 模型下载脚本；`deployAssets=true` 时自动部署缺失的 serviceDir |
 | 🔒 安全围栏 | CSRF / DNS 重绑定防护、并发互斥、白名单校验、无 shell 注入面 |
 | 🔌 HTTP API | 状态 / 配置读写 / 控制 / 日志 四个路由，GUI 全部通过它们工作 |
@@ -65,7 +65,7 @@ dsh-ds4-plugin/
 
 **控制页**
 - **状态卡**：脉冲状态点 + 运行中/已停止 + 键值行（PID / 端口 / 上下文 / 线程，等宽字体）+ 服务目录路径
-- **操作按钮**：▶ 启动（primary，点击触发[启动着色器动效](#启动着色器动效css-to-shader)）/ 🔄 重启（outline）/ ⏹ 停止（destructive）；按状态机启停用（运行中禁用启动，已停止禁用重启/停止），执行中显示 spinner
+- **操作按钮**：▶ 启动 / 🔄 重启 / ⏹ 停止，均触发[着色器动效](#控制着色器动效css-to-shader)（各模式主题色与按钮语义一致）；按状态机启停用（运行中禁用启动，已停止禁用重启/停止），执行中显示 spinner
 - **内联提示**：成功/失败/进行中三种样式，保存参数后附「立即重启」快捷按钮
 - **日志卡**：终端风格（等宽、自动滚底、成功/失败行着色、随主题切换底色）+ 刷新按钮
 
@@ -130,13 +130,21 @@ shadcn 的核心思想：所有颜色抽象成语义变量（`--background`/`--c
 
 ---
 
-## 启动着色器动效（CSS-to-Shader）
+## 控制着色器动效（CSS-to-Shader）
 
-点击「启动」时面板上会播放一段 WebGL 着色器动效，技术路线学习自 [html-in-canvas.dev 的 CSS-to-Shader 案例](https://html-in-canvas.dev/demos/css-to-shader/)（DOM → canvas 纹理 → 片元着色器）：
+点击「启动 / 重启 / 停止」时面板上会播放对应模式的 WebGL 着色器动效，技术路线学习自 [html-in-canvas.dev 的 CSS-to-Shader 案例](https://html-in-canvas.dev/demos/css-to-shader/)（DOM → canvas 纹理 → 片元着色器）：
 
 ```
 纹理源 ──→ 2D 画布(stage) ──→ WebGL 纹理 ──→ 片元着色器 ──→ 面板区域上的 overlay
 ```
+
+**三种模式**共享同一套着色器与 HUD 管线，靠 uniform + 时序区分，主题色与按钮语义一致（token 级跟随深浅主题）：
+
+| 模式 | 主题色 token | 叙事 | 特色效果 |
+| --- | --- | --- | --- |
+| ▶ 启动 | `--ds4-primary`（青） | 冷开机：BOOT SEQUENCE 日志，进度 0→100 渐强 | 开场上电白闪，均衡器随进度升起 |
+| 🔄 重启 | `--ds4-warn`（琥珀） | 拆卸（TERM/排水/刷盘/释放权重）→ 落定后 re-bootstrap 再点火 | 落定瞬间故障尖峰（电涌感），进度先降后升 |
+| ⏹ 停止 | `--ds4-err`（红） | SHUTDOWN 日志，进度 100→0 衰减 | **CRT 断电坍缩**：整幅画面压成水平亮线再熄灭 |
 
 **片元着色器**（GLSL，逐像素）叠加了案例中的多个预设技法：
 
@@ -147,13 +155,14 @@ shadcn 的核心思想：所有颜色抽象成语义变量（`--background`/`--c
 | 径向色差 | 从点击坐标向外 RGB 分裂（chromatic 预设） |
 | 扫描线 / 磷光闪烁 | 子像素正弦 + 时间抖动（crt 预设） |
 | 暗角 | 距中心平方衰减 |
-| 点击光环 | 从启动按钮位置扩散的光环（案例 `spawnRipple` 的着色器化） |
-| 上电白闪 + 扫描光带 | 开场 CRT 通电感 / 周期扫描线 |
+| 点击光环 | 从被点按钮位置扩散的模式色光环（案例 `spawnRipple` 的着色器化） |
+| 通电/断电白闪 | 启动=开场闪，重启=落定闪，停止=坍缩末段闪 |
+| 断电坍缩 | 停止专属：采样坐标向中线挤压 + 亮度增益 → 经典 CRT 关机亮线 |
 
 **纹理源**双路径：
 
 - **Chromium 147+**（开 `canvas-draw-element`）：`drawElementImage()` 逐帧绘制真实面板 DOM 作为纹理——与原案例同款管线，HUD 浮在实时界面之上；
-- **其余浏览器**：程序化绘制的 boot HUD（DS4 标题 + 闪烁光标 + 逐行启动日志 + 进度条 + 均衡器，布局借鉴案例的 Controls/Visual 源场景），颜色从面板 `--ds4-*` token 读取，**深浅主题自动带入**。
+- **其余浏览器**：程序化绘制的 boot HUD（DS4 标题 + 闪烁光标 + 逐行日志 + 进度条 + 均衡器，布局借鉴案例的 Controls/Visual 源场景），颜色从面板 `--ds4-*` token 读取，**深浅主题自动带入**。
 
 **降级**（动效是纯增强，绝不影响功能）：`prefers-reduced-motion` → 跳过；WebGL 不可用 / 着色器编译失败 → 静默跳过；`webglcontextlost` → 立即收场清理（`WEBGL_lose_context` 释放上下文）；面板关闭 → 矩形消失即停；请求超过 16s → 安全收场（服务预热最长 2 分钟，消息条仍持续显示进度）。
 

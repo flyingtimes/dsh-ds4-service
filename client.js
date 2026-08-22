@@ -448,6 +448,10 @@ window.__ModuleLoader__.load({
       "uniform float u_progress;",
       "uniform float u_intensity;",
       "uniform vec2 u_origin;",
+      "uniform float u_mode;",      /* 0=启动 1=重启 2=停止 */
+      "uniform float u_settleT;",   /* 请求落定时刻; 未定为 -1 */
+      "uniform float u_collapse;",  /* 停止收场: CRT 垂直坍缩 0..1 */
+      "uniform vec3 u_tint;",       /* 模式主题色: primary/warn/err */
       "varying vec2 v_texCoord;",
       "float rand(float s){ return fract(sin(s * 12.9898) * 43758.5453); }",
       "void main(){",
@@ -461,15 +465,23 @@ window.__ModuleLoader__.load({
       "  float block = floor(uv.y * 16.0);",
       "  float gate = step(0.86, rand(tg)) * u_intensity;",
       "  uv.x += (rand(block + tg * 1.7) - 0.5) * 0.06 * gate;",
+      /* 停止：CRT 断电坍缩（整幅画面压成水平亮线再熄灭） */
+      "  vec2 cuv = uv;",
+      "  cuv.y = 0.5 + (uv.y - 0.5) * max(0.035, 1.0 - u_collapse);",
+      "  cuv.x = 0.5 + (uv.x - 0.5) * (1.0 - u_collapse * 0.35);",
       /* 径向色差：从点击处向外 RGB 分裂（案例 chromatic 预设） */
-      "  vec2 dir = uv - u_origin;",
+      "  vec2 dir = cuv - u_origin;",
       "  float amount = (0.006 + 0.010 * u_intensity) * (0.6 + 0.4 * sin(u_time * 3.0));",
-      "  float r = texture2D(u_texture, uv + dir * amount).r;",
-      "  float g = texture2D(u_texture, uv).g;",
-      "  float b = texture2D(u_texture, uv - dir * amount).b;",
+      "  float r = texture2D(u_texture, cuv + dir * amount).r;",
+      "  float g = texture2D(u_texture, cuv).g;",
+      "  float b = texture2D(u_texture, cuv - dir * amount).b;",
       "  vec3 col = vec3(r, g, b);",
-      /* 上电白闪（前 0.35s） */
-      "  float flash = max(0.0, 1.0 - u_time / 0.35);",
+      "  col *= 1.0 + u_collapse * 2.4;",   /* 坍缩时能量集中 → 亮线 */
+      /* 通电/断电白闪：启动=开场闪，重启=落定闪，停止=坍缩末段闪 */
+      "  float flash = 0.0;",
+      "  if (u_mode < 0.5) { flash = max(0.0, 1.0 - u_time / 0.35); }",
+      "  else if (u_mode < 1.5) { flash = u_settleT > 0.0 ? max(0.0, 1.0 - (u_time - u_settleT) / 0.35) : 0.0; }",
+      "  else { flash = clamp((u_collapse - 0.55) / 0.45, 0.0, 1.0) * 0.9; }",
       "  col = mix(col, vec3(0.92, 0.98, 1.0), flash * flash * 0.5);",
       /* 扫描线 + 磷光闪烁（子像素感知） */
       "  col -= sin(uv.y * u_resolution.y * 1.35) * 0.07 * (0.5 + 0.5 * u_intensity);",
@@ -477,14 +489,14 @@ window.__ModuleLoader__.load({
       /* 暗角 + 磷光偏色 */
       "  col *= 1.0 - d2 * (0.9 + 0.7 * u_intensity);",
       "  col.r *= 1.0 + 0.05 * u_intensity;",
-      /* 点击处扩散光环（案例 spawnRipple 的着色器化） */
+      /* 点击处扩散光环（模式主题色；案例 spawnRipple 的着色器化） */
       "  vec2 rd = (v_texCoord - u_origin) * vec2(u_resolution.x / u_resolution.y, 1.0);",
       "  float ring = abs(length(rd) - u_time * 0.85);",
       "  float glow = smoothstep(0.045, 0.0, ring) * max(0.0, 1.0 - u_time / 1.15);",
-      "  col += vec3(0.35, 0.85, 1.0) * glow * 0.8;",
-      /* 启动扫描光带 */
+      "  col += u_tint * glow * 0.8;",
+      /* 启动扫描光带（模式主题色） */
       "  float sweep = smoothstep(0.012, 0.0, abs(uv.y - fract(u_time * 0.45)));",
-      "  col += vec3(0.25, 0.65, 0.85) * sweep * 0.22 * (0.4 + 0.6 * u_intensity);",
+      "  col += u_tint * 0.85 * sweep * 0.22 * (0.4 + 0.6 * u_intensity);",
       /* 弧形失真出界遮罩 */
       "  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) col = vec3(0.0);",
       "  gl_FragColor = vec4(col, 1.0);",
@@ -497,6 +509,22 @@ window.__ModuleLoader__.load({
       gl.compileShader(s);
       if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { gl.deleteShader(s); return null; }
       return s;
+    }
+
+    /** 解析 CSS 颜色(#hex/#rgb短/rgb()/rgba()) → [r,g,b] 0..1，失败回退 */
+    function fxParseColor(s, fb) {
+      s = String(s == null ? "" : s).trim();
+      var m;
+      if ((m = s.match(/^#([0-9a-f]{6})$/i))) {
+        return [parseInt(m[1].slice(0, 2), 16) / 255, parseInt(m[1].slice(2, 4), 16) / 255, parseInt(m[1].slice(4, 6), 16) / 255];
+      }
+      if ((m = s.match(/^#([0-9a-f]{3})$/i))) {
+        return [parseInt(m[1][0] + m[1][0], 16) / 255, parseInt(m[1][1] + m[1][1], 16) / 255, parseInt(m[1][2] + m[1][2], 16) / 255];
+      }
+      if ((m = s.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/))) {
+        return [Math.min(1, +m[1] / 255), Math.min(1, +m[2] / 255), Math.min(1, +m[3] / 255)];
+      }
+      return fb;
     }
 
     function mountBootShader(panelEl, opts) {
@@ -544,6 +572,10 @@ window.__ModuleLoader__.load({
       var uProg = gl.getUniformLocation(prog, "u_progress");
       var uInt = gl.getUniformLocation(prog, "u_intensity");
       var uOrigin = gl.getUniformLocation(prog, "u_origin");
+      var uMode = gl.getUniformLocation(prog, "u_mode");
+      var uSettleT = gl.getUniformLocation(prog, "u_settleT");
+      var uCollapse = gl.getUniformLocation(prog, "u_collapse");
+      var uTint = gl.getUniformLocation(prog, "u_tint");
 
       /* 纹理源画布：Chromium 147+ 走 drawElementImage(1:1 CSS 像素)，否则 dpr 放大绘制 HUD */
       var stage = document.createElement("canvas");
@@ -565,21 +597,47 @@ window.__ModuleLoader__.load({
         err: tok("--ds4-err", "#f87171")
       };
 
+      /* 模式：0=启动 1=重启 2=停止。主题色与按钮语义一致(primary/warn/err)，深浅主题自动带入 */
+      var MODE = opts && opts.mode === "restart" ? 1 : opts && opts.mode === "stop" ? 2 : 0;
+      var EYEBROW = ["DS4-SERVER · BOOT SEQUENCE", "DS4-SERVER · RESTART SEQUENCE", "DS4-SERVER · SHUTDOWN SEQUENCE"][MODE];
+      var TINT = fxParseColor(tok(["--ds4-primary", "--ds4-warn", "--ds4-err"][MODE], ""),
+        [[0.35, 0.85, 1.0], [0.96, 0.73, 0.26], [0.97, 0.44, 0.38]][MODE]);
+      var tintCss = "rgb(" + Math.round(TINT[0] * 255) + "," + Math.round(TINT[1] * 255) + "," + Math.round(TINT[2] * 255) + ")";
+
       var base = String((opts && opts.model) || "").split("/").pop() || "model.gguf";
       if (base.length > 26) base = base.slice(0, 25) + "…";
       var port = (opts && opts.port) || 8000;
-      var LINES = [
+      var TEARDOWN = [
+        { at: 0.05, text: "▸ restart requested", c: TH.muted },
+        { at: 0.40, text: "· signal TERM → ds4-server", c: TH.subtle },
+        { at: 0.90, text: "· draining connections", c: TH.subtle },
+        { at: 1.50, text: "· flushing kv-disk cache", c: TH.fg },
+        { at: 2.30, text: "· releasing weights", c: TH.subtle }
+      ];
+      var REBOOT = [
+        { at: 0.05, text: "▸ re-bootstrap", c: TH.muted },
+        { at: 0.35, text: "· metal · apple silicon", c: TH.subtle },
+        { at: 0.70, text: "· warm-up weights", c: TH.subtle }
+      ];
+      var LINES = MODE === 0 ? [
         { at: 0.10, text: "▸ ds4-server bootstrap", c: TH.muted },
         { at: 0.55, text: "· metal · apple silicon", c: TH.subtle },
         { at: 1.05, text: "· model  " + base, c: TH.fg },
         { at: 1.60, text: "· ctx " + ((opts && opts.ctxLen) || 0) + " · threads " + ((opts && opts.threads) || 0), c: TH.subtle },
         { at: 2.20, text: "· kv-disk · warm-up weights", c: TH.subtle },
         { at: 3.00, text: "· awaiting port " + port + " …", c: TH.muted }
+      ] : MODE === 1 ? TEARDOWN : [
+        { at: 0.05, text: "▸ shutdown requested", c: TH.muted },
+        { at: 0.40, text: "· signal TERM → workers", c: TH.subtle },
+        { at: 0.95, text: "· draining connections", c: TH.subtle },
+        { at: 1.60, text: "· flushing kv-disk", c: TH.fg },
+        { at: 2.40, text: "· waiting for exit …", c: TH.subtle }
       ];
 
       var origin = (opts && opts.origin) || { x: 0.5, y: 0.85 };
       var t0 = performance.now();
       var settled = false, ok = false, settledAt = 0, stopped = false, raf = 0;
+      var p = 0.05;   /* 平滑进度（各模式目标不同） */
 
       function stop() {
         if (stopped) return;
@@ -624,11 +682,11 @@ window.__ModuleLoader__.load({
 
         var mono = "ui-monospace, SFMono-Regular, Menlo, monospace";
         var pad = 18;
-        /* eyebrow */
+        /* eyebrow（模式化标题 + 百分比） */
         sctx.font = "700 9px " + mono;
-        sctx.fillStyle = TH.primary;
+        sctx.fillStyle = tintCss;
         sctx.textAlign = "left"; sctx.textBaseline = "alphabetic";
-        sctx.fillText("DS4-SERVER · BOOT SEQUENCE", pad, 26);
+        sctx.fillText(EYEBROW, pad, 26);
         sctx.textAlign = "right";
         sctx.fillStyle = TH.muted;
         sctx.fillText(Math.round(prog * 100) + "%", W - pad, 26);
@@ -639,18 +697,28 @@ window.__ModuleLoader__.load({
         sctx.fillText("DS4", pad, 60);
         var tw = sctx.measureText("DS4").width;
         if (Math.floor(t * 2.6) % 2 === 0) {
-          sctx.fillStyle = TH.primary;
+          sctx.fillStyle = tintCss;
           sctx.fillRect(pad + tw + 5, 40, 13, 4);
         }
-        /* 启动日志行 */
+        /* 日志行：落定后全量显示；重启落定成功再追加点火段（错峰出现） */
         var y = 92, lh = 17;
         sctx.font = "500 10.5px " + mono;
         for (var i = 0; i < LINES.length; i++) {
-          if (t >= LINES[i].at) { sctx.fillStyle = LINES[i].c; sctx.fillText(LINES[i].text, pad, y); y += lh; }
+          if (settled || t >= LINES[i].at) { sctx.fillStyle = LINES[i].c; sctx.fillText(LINES[i].text, pad, y); y += lh; }
+        }
+        if (MODE === 1 && settled && ok) {
+          var tp = t - (settledAt || t);
+          for (var j = 0; j < REBOOT.length; j++) {
+            if (tp >= REBOOT[j].at) { sctx.fillStyle = REBOOT[j].c; sctx.fillText(REBOOT[j].text, pad, y); y += lh; }
+          }
         }
         if (settled) {
+          var doneTxt;
+          if (MODE === 0) doneTxt = ok ? "✓ listening on :" + port : "✗ boot failed";
+          else if (MODE === 1) doneTxt = ok ? "✓ listening on :" + port : "✗ restart failed";
+          else doneTxt = ok ? "✓ halted · port freed" : "✗ stop failed";
           sctx.fillStyle = ok ? TH.ok : TH.err;
-          sctx.fillText(ok ? "✓ listening on :" + port : "✗ boot failed", pad, y);
+          sctx.fillText(doneTxt, pad, y);
           y += lh;
         }
         /* 进度条（案例 scene-meter 的画布版） */
@@ -658,7 +726,7 @@ window.__ModuleLoader__.load({
         sctx.fillStyle = "rgba(127,127,127,0.18)";
         sctx.fillRect(pad, my, mw, 5);
         var grad = sctx.createLinearGradient(pad, 0, pad + mw, 0);
-        grad.addColorStop(0, TH.primary); grad.addColorStop(1, TH.ok);
+        grad.addColorStop(0, tintCss); grad.addColorStop(1, TH.ok);
         sctx.fillStyle = grad;
         sctx.fillRect(pad, my, mw * prog, 5);
         /* 均衡器（案例 VISUAL 源场景的地平线均衡器） */
@@ -667,10 +735,11 @@ window.__ModuleLoader__.load({
         var baseY = H - 16;
         for (var k = 0; k < n; k++) {
           var amp = 0.15 + 0.8 * Math.abs(Math.sin(t * 3.1 + k * 0.7) * Math.cos(t * 1.3 + k * 0.35));
-          var bh = 6 + amp * 34 * (0.35 + 0.65 * (1 - prog * 0.4));
+          /* 振幅随进度缩放：启动渐强 / 停止衰减熄灭 */
+          var bh = 6 + amp * 34 * (0.25 + 0.75 * prog);
           var bx = pad + k * (bw + gap);
           var bg2 = sctx.createLinearGradient(0, baseY - bh, 0, baseY);
-          bg2.addColorStop(0, TH.primary); bg2.addColorStop(1, "rgba(0,0,0,0)");
+          bg2.addColorStop(0, tintCss); bg2.addColorStop(1, "rgba(0,0,0,0)");
           sctx.globalAlpha = 0.8;
           sctx.fillStyle = bg2;
           sctx.fillRect(bx, baseY - bh, bw, bh);
@@ -695,10 +764,36 @@ window.__ModuleLoader__.load({
         var t = (performance.now() - t0) / 1000;
         if (settled && !settledAt) settledAt = t;
         if (!settled && t > 16) { settled = true; ok = true; }     /* 安全阀 */
+
+        /* 各模式进度目标（平滑趋近）：启动 0→1 渐强；重启先拆卸(降)后点火(升)；停止 1→0 衰减 */
+        var target;
+        if (!settled) {
+          if (MODE === 0) target = Math.min(0.94, 0.06 + t / 9);
+          else if (MODE === 1) target = Math.max(0.2, 0.96 - t / 3.0);
+          else target = Math.max(0.08, 0.92 - t / 2.6);
+        } else if (ok) {
+          target = MODE === 2 ? 0.02 : 1;
+        } else {
+          target = MODE === 2 ? 0.4 : MODE === 1 ? 0.12 : 0.9;
+        }
+        p += (target - p) * 0.12;
+        var prog = Math.max(0, Math.min(1, p));
+
+        /* 停止成功：落定后 CRT 断电坍缩（压成亮线再熄灭） */
+        var collapse = 0;
+        if (MODE === 2 && settled && ok) {
+          collapse = Math.max(0, Math.min(1, (t - settledAt - 0.45) / 0.6));
+        }
+
+        /* 强度包络：常规衰减；重启落定瞬间加一段故障尖峰（拆卸→点火的电涌感） */
         var intensity = settled ? Math.max(0, 1 - Math.max(0, t - settledAt - 0.9) / 0.6) : 1;
-        if (settled && t > settledAt + 1.5) overlay.setAttribute("data-done", "1");
-        if (settled && t > settledAt + 2.1) return stop();
-        var prog = (settled && ok) ? 1 : Math.min(0.94, 0.06 + t / 9);
+        if (MODE === 1 && settled && ok) intensity = Math.min(1.5, Math.max(intensity, 1.5 - (t - settledAt) * 2.2));
+
+        /* 收场时刻（按模式微调：停止成功的坍缩短收，失败多留半秒看错误行） */
+        var doneAt = settledAt + (MODE === 2 ? (ok ? 1.2 : 1.5) : 1.5);
+        var stopAt = settledAt + (MODE === 2 ? (ok ? 1.9 : 2.1) : 2.1);
+        if (settled && t > doneAt) overlay.setAttribute("data-done", "1");
+        if (settled && t > stopAt) return stop();
 
         paint(t, prog);
 
@@ -712,6 +807,10 @@ window.__ModuleLoader__.load({
         gl.uniform1f(uProg, prog);
         gl.uniform1f(uInt, intensity);
         gl.uniform2f(uOrigin, origin.x, origin.y);
+        gl.uniform1f(uMode, MODE);
+        gl.uniform1f(uSettleT, settledAt || -1);
+        gl.uniform1f(uCollapse, collapse);
+        gl.uniform3f(uTint, TINT[0], TINT[1], TINT[2]);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       }
 
@@ -812,8 +911,8 @@ window.__ModuleLoader__.load({
           msgRef.current = { kind: "err", text: "控制请求失败" };
           force();
         });
-        /* 启动按钮 → CSS-to-Shader 启动动效 */
-        if (action === "start") {
+        /* 控制按钮 → CSS-to-Shader 动效（启动=冷开机 / 重启=拆卸再点火 / 停止=断电坍缩） */
+        {
           var host = (ev && ev.currentTarget && ev.currentTarget.closest)
             ? ev.currentTarget.closest(".ds4-panel")
             : (typeof document !== "undefined" && document.querySelector ? document.querySelector(".ds4-panel") : null);
@@ -828,7 +927,7 @@ window.__ModuleLoader__.load({
               };
             }
             mountBootShader(host, {
-              until: req, port: f && f.port, model: f && f.model,
+              mode: action, until: req, port: f && f.port, model: f && f.model,
               threads: f && f.threads, ctxLen: f && f.ctx, origin: o
             });
           }
@@ -900,13 +999,13 @@ window.__ModuleLoader__.load({
         jsx.jsxs("button", {
           className: "ds4-btn ds4-btn--outline",
           disabled: !!busy || running === false,
-          onClick: function () { doControl("restart"); },
+          onClick: function (e) { doControl("restart", e); },
           children: [busy === "restart" ? Spinner() : IcoRotate(13), busy === "restart" ? "重启中" : "重启"]
         }),
         jsx.jsxs("button", {
           className: "ds4-btn ds4-btn--danger",
           disabled: !!busy || running === false,
-          onClick: function () { doControl("stop"); },
+          onClick: function (e) { doControl("stop", e); },
           children: [busy === "stop" ? Spinner() : IcoStop(13), busy === "stop" ? "停止中" : "停止"]
         })
       ] });
