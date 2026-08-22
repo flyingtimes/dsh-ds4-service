@@ -1,6 +1,6 @@
 {
   "serviceDir": "/Users/clark/code/ds4-on-mac",
-  "model": "{{assets}}/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128.gguf",
+  "model": "ds4flash.gguf",
   "port": 8000,
   "ctx": 393216,
   "threads": 20,

@@ -243,6 +243,11 @@ window.__ModuleLoader__.load({
       ".ds4-log-line--err{color:var(--ds4-log-err)}",
       ".ds4-log-empty{color:var(--ds4-log-empty)}",
 
+      /* ── 启动着色器动效 overlay（body 级 fixed，跟随面板矩形；降级时不存在） ── */
+      ".ds4-fx{position:fixed;z-index:9600;pointer-events:none;overflow:hidden;opacity:1;transition:opacity .5s ease;border:1px solid var(--dsw-alias-border-subtle,rgba(255,255,255,.12));box-shadow:0 32px 64px -16px rgba(0,0,0,.5)}",
+      ".ds4-fx[data-done='1']{opacity:0}",
+      ".ds4-fx canvas{display:block;width:100%;height:100%}",
+
       /* ── 参数页保存条（毛玻璃悬浮层） ── */
       ".ds4-savebar{position:sticky;bottom:-14px;margin:12px -14px -14px;padding:10px 14px 12px;background:var(--ds4-savebar-grad),var(--ds4-bg);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-top:1px solid var(--ds4-border);box-shadow:var(--ds4-savebar-shadow);display:flex;align-items:center;gap:10px}",
       ".ds4-savebar-note{flex:1;min-width:0;font-size:10.5px;color:var(--ds4-subtle);line-height:1.45}",
@@ -417,6 +422,304 @@ window.__ModuleLoader__.load({
       return jsx.jsx(DS4PanelBody, {});
     }
 
+    /* ═══════════ 启动着色器动效（CSS-to-Shader，借鉴 html-in-canvas.dev/demos/css-to-shader） ═══════════
+       管线：纹理源 → 2D 画布 → WebGL 片元着色器（CRT 弧形失真 + 故障块位移 + 径向色差 + 扫描线 +
+       暗角 + 磷光闪烁 + 点击处扩散光环）。纹理源两种：
+         · Chromium 147+（canvas-draw-element）：drawElementImage 实时绘制面板 DOM —— 与原案例同款管线；
+         · 其余浏览器：程序化绘制的 boot HUD（标题/启动日志/进度条/均衡器）作为纹理。
+       降级：prefers-reduced-motion、WebGL 不可用、着色器编译失败 → 静默跳过，按钮功能不受影响。 */
+    var bootFxActive = false;
+
+    var FX_VERT = [
+      "attribute vec2 a_position;",
+      "varying vec2 v_texCoord;",
+      "void main(){",
+      "  v_texCoord = a_position * 0.5 + 0.5;",
+      "  v_texCoord.y = 1.0 - v_texCoord.y;",
+      "  gl_Position = vec4(a_position, 0.0, 1.0);",
+      "}"
+    ].join("\n");
+
+    var FX_FRAG = [
+      "precision mediump float;",
+      "uniform sampler2D u_texture;",
+      "uniform vec2 u_resolution;",
+      "uniform float u_time;",
+      "uniform float u_progress;",
+      "uniform float u_intensity;",
+      "uniform vec2 u_origin;",
+      "varying vec2 v_texCoord;",
+      "float rand(float s){ return fract(sin(s * 12.9898) * 43758.5453); }",
+      "void main(){",
+      "  vec2 uv = v_texCoord;",
+      /* CRT 弧形失真（案例 crt 预设） */
+      "  vec2 dc = uv - 0.5;",
+      "  float d2 = dot(dc, dc);",
+      "  uv += dc * d2 * 0.14 * u_intensity;",
+      /* 故障：水平块位移，随机门控（案例 glitch 预设） */
+      "  float tg = floor(u_time * 8.0);",
+      "  float block = floor(uv.y * 16.0);",
+      "  float gate = step(0.86, rand(tg)) * u_intensity;",
+      "  uv.x += (rand(block + tg * 1.7) - 0.5) * 0.06 * gate;",
+      /* 径向色差：从点击处向外 RGB 分裂（案例 chromatic 预设） */
+      "  vec2 dir = uv - u_origin;",
+      "  float amount = (0.006 + 0.010 * u_intensity) * (0.6 + 0.4 * sin(u_time * 3.0));",
+      "  float r = texture2D(u_texture, uv + dir * amount).r;",
+      "  float g = texture2D(u_texture, uv).g;",
+      "  float b = texture2D(u_texture, uv - dir * amount).b;",
+      "  vec3 col = vec3(r, g, b);",
+      /* 上电白闪（前 0.35s） */
+      "  float flash = max(0.0, 1.0 - u_time / 0.35);",
+      "  col = mix(col, vec3(0.92, 0.98, 1.0), flash * flash * 0.5);",
+      /* 扫描线 + 磷光闪烁（子像素感知） */
+      "  col -= sin(uv.y * u_resolution.y * 1.35) * 0.07 * (0.5 + 0.5 * u_intensity);",
+      "  col *= 0.97 + 0.03 * sin(u_time * 9.0) * u_intensity;",
+      /* 暗角 + 磷光偏色 */
+      "  col *= 1.0 - d2 * (0.9 + 0.7 * u_intensity);",
+      "  col.r *= 1.0 + 0.05 * u_intensity;",
+      /* 点击处扩散光环（案例 spawnRipple 的着色器化） */
+      "  vec2 rd = (v_texCoord - u_origin) * vec2(u_resolution.x / u_resolution.y, 1.0);",
+      "  float ring = abs(length(rd) - u_time * 0.85);",
+      "  float glow = smoothstep(0.045, 0.0, ring) * max(0.0, 1.0 - u_time / 1.15);",
+      "  col += vec3(0.35, 0.85, 1.0) * glow * 0.8;",
+      /* 启动扫描光带 */
+      "  float sweep = smoothstep(0.012, 0.0, abs(uv.y - fract(u_time * 0.45)));",
+      "  col += vec3(0.25, 0.65, 0.85) * sweep * 0.22 * (0.4 + 0.6 * u_intensity);",
+      /* 弧形失真出界遮罩 */
+      "  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) col = vec3(0.0);",
+      "  gl_FragColor = vec4(col, 1.0);",
+      "}"
+    ].join("\n");
+
+    function fxCompile(gl, type, src) {
+      var s = gl.createShader(type);
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { gl.deleteShader(s); return null; }
+      return s;
+    }
+
+    function mountBootShader(panelEl, opts) {
+      if (!panelEl || bootFxActive) return;
+      if (typeof document === "undefined" || typeof requestAnimationFrame === "undefined") return;
+      try {
+        if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      } catch (e) { /* 忽略 */ }
+
+      var overlay = document.createElement("div");
+      overlay.className = "ds4-fx";
+      var canvas = document.createElement("canvas");
+      overlay.appendChild(canvas);
+
+      var gl = null;
+      try { gl = canvas.getContext("webgl", { premultipliedAlpha: false, antialias: false }); } catch (e) {}
+      if (!gl) return;
+
+      /* 着色器编译（失败 → 静默放弃，不挂 overlay） */
+      var vert = fxCompile(gl, gl.VERTEX_SHADER, FX_VERT);
+      var frag = fxCompile(gl, gl.FRAGMENT_SHADER, FX_FRAG);
+      if (!vert || !frag) { if (vert) gl.deleteShader(vert); if (frag) gl.deleteShader(frag); return; }
+      var prog = gl.createProgram();
+      gl.attachShader(prog, vert); gl.attachShader(prog, frag); gl.linkProgram(prog);
+      gl.deleteShader(vert); gl.deleteShader(frag);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return;
+      gl.useProgram(prog);
+
+      var buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+      var aPos = gl.getAttribLocation(prog, "a_position");
+      gl.enableVertexAttribArray(aPos);
+      gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+      var tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      var uTex = gl.getUniformLocation(prog, "u_texture");
+      var uRes = gl.getUniformLocation(prog, "u_resolution");
+      var uTime = gl.getUniformLocation(prog, "u_time");
+      var uProg = gl.getUniformLocation(prog, "u_progress");
+      var uInt = gl.getUniformLocation(prog, "u_intensity");
+      var uOrigin = gl.getUniformLocation(prog, "u_origin");
+
+      /* 纹理源画布：Chromium 147+ 走 drawElementImage(1:1 CSS 像素)，否则 dpr 放大绘制 HUD */
+      var stage = document.createElement("canvas");
+      var sctx = stage.getContext("2d");
+      if (!sctx) return;
+      var enhance = typeof sctx.drawElementImage === "function";
+      var dpr = enhance ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+
+      /* 主题 token 从面板计算样式读取（深浅模式自动带入） */
+      var pcs = window.getComputedStyle ? window.getComputedStyle(panelEl) : null;
+      var tok = function (name, fb) {
+        var v = pcs ? String(pcs.getPropertyValue(name) || "").trim() : "";
+        return v || fb;
+      };
+      var TH = {
+        bg: tok("--ds4-bg", "#141821"), fg: tok("--ds4-fg", "#e8ecf3"),
+        muted: tok("--ds4-muted", "#a7b1c4"), subtle: tok("--ds4-subtle", "#7c879c"),
+        primary: tok("--ds4-primary", "#4fd8ff"), ok: tok("--ds4-ok", "#3dd68c"),
+        err: tok("--ds4-err", "#f87171")
+      };
+
+      var base = String((opts && opts.model) || "").split("/").pop() || "model.gguf";
+      if (base.length > 26) base = base.slice(0, 25) + "…";
+      var port = (opts && opts.port) || 8000;
+      var LINES = [
+        { at: 0.10, text: "▸ ds4-server bootstrap", c: TH.muted },
+        { at: 0.55, text: "· metal · apple silicon", c: TH.subtle },
+        { at: 1.05, text: "· model  " + base, c: TH.fg },
+        { at: 1.60, text: "· ctx " + ((opts && opts.ctxLen) || 0) + " · threads " + ((opts && opts.threads) || 0), c: TH.subtle },
+        { at: 2.20, text: "· kv-disk · warm-up weights", c: TH.subtle },
+        { at: 3.00, text: "· awaiting port " + port + " …", c: TH.muted }
+      ];
+
+      var origin = (opts && opts.origin) || { x: 0.5, y: 0.85 };
+      var t0 = performance.now();
+      var settled = false, ok = false, settledAt = 0, stopped = false, raf = 0;
+
+      function stop() {
+        if (stopped) return;
+        stopped = true;
+        cancelAnimationFrame(raf);
+        overlay.remove();
+        try { var lc = gl.getExtension("WEBGL_lose_context"); if (lc) lc.loseContext(); } catch (e) {}
+        bootFxActive = false;
+      }
+      canvas.addEventListener("webglcontextlost", stop);
+
+      Promise.resolve(opts && opts.until).then(
+        function (j) { settled = true; ok = !!(j && j.ok); },
+        function () { settled = true; ok = false; }
+      );
+
+      function paint(t, prog) {
+        var rect = panelEl.getBoundingClientRect();
+        var W = Math.max(1, Math.round(rect.width));
+        var H = Math.max(1, Math.round(rect.height));
+        if (stage.width !== W * dpr || stage.height !== H * dpr) { stage.width = W * dpr; stage.height = H * dpr; }
+        sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        if (enhance) {
+          /* 原案例同款：实时 DOM → 纹理（HUD 之下），失败自动退回纯 HUD */
+          sctx.clearRect(0, 0, W, H);
+          try { sctx.drawElementImage(panelEl, 0, 0); } catch (e) { enhance = false; }
+          sctx.fillStyle = "rgba(3,7,13,0.42)";
+          sctx.fillRect(0, 0, W, H);
+        }
+        if (!enhance) {
+          /* 程序化背景：双层径向渐变（借鉴案例 CONTROLS 源场景） */
+          sctx.fillStyle = TH.bg;
+          sctx.fillRect(0, 0, W, H);
+          var g1 = sctx.createRadialGradient(W * 0.2, 0, 0, W * 0.2, 0, H * 0.95);
+          g1.addColorStop(0, "rgba(45,110,170,0.40)"); g1.addColorStop(1, "rgba(0,0,0,0)");
+          sctx.fillStyle = g1; sctx.fillRect(0, 0, W, H);
+          var g2 = sctx.createRadialGradient(W, H, 0, W, H, H * 0.9);
+          g2.addColorStop(0, "rgba(0,110,130,0.32)"); g2.addColorStop(1, "rgba(0,0,0,0)");
+          sctx.fillStyle = g2; sctx.fillRect(0, 0, W, H);
+        }
+
+        var mono = "ui-monospace, SFMono-Regular, Menlo, monospace";
+        var pad = 18;
+        /* eyebrow */
+        sctx.font = "700 9px " + mono;
+        sctx.fillStyle = TH.primary;
+        sctx.textAlign = "left"; sctx.textBaseline = "alphabetic";
+        sctx.fillText("DS4-SERVER · BOOT SEQUENCE", pad, 26);
+        sctx.textAlign = "right";
+        sctx.fillStyle = TH.muted;
+        sctx.fillText(Math.round(prog * 100) + "%", W - pad, 26);
+        /* 标题 + 闪烁光标 */
+        sctx.textAlign = "left";
+        sctx.font = "800 30px " + mono;
+        sctx.fillStyle = TH.fg;
+        sctx.fillText("DS4", pad, 60);
+        var tw = sctx.measureText("DS4").width;
+        if (Math.floor(t * 2.6) % 2 === 0) {
+          sctx.fillStyle = TH.primary;
+          sctx.fillRect(pad + tw + 5, 40, 13, 4);
+        }
+        /* 启动日志行 */
+        var y = 92, lh = 17;
+        sctx.font = "500 10.5px " + mono;
+        for (var i = 0; i < LINES.length; i++) {
+          if (t >= LINES[i].at) { sctx.fillStyle = LINES[i].c; sctx.fillText(LINES[i].text, pad, y); y += lh; }
+        }
+        if (settled) {
+          sctx.fillStyle = ok ? TH.ok : TH.err;
+          sctx.fillText(ok ? "✓ listening on :" + port : "✗ boot failed", pad, y);
+          y += lh;
+        }
+        /* 进度条（案例 scene-meter 的画布版） */
+        var mw = W - pad * 2, my = Math.max(y + 10, H - 74);
+        sctx.fillStyle = "rgba(127,127,127,0.18)";
+        sctx.fillRect(pad, my, mw, 5);
+        var grad = sctx.createLinearGradient(pad, 0, pad + mw, 0);
+        grad.addColorStop(0, TH.primary); grad.addColorStop(1, TH.ok);
+        sctx.fillStyle = grad;
+        sctx.fillRect(pad, my, mw * prog, 5);
+        /* 均衡器（案例 VISUAL 源场景的地平线均衡器） */
+        var n = 16, gap = 3;
+        var bw = (mw - gap * (n - 1)) / n;
+        var baseY = H - 16;
+        for (var k = 0; k < n; k++) {
+          var amp = 0.15 + 0.8 * Math.abs(Math.sin(t * 3.1 + k * 0.7) * Math.cos(t * 1.3 + k * 0.35));
+          var bh = 6 + amp * 34 * (0.35 + 0.65 * (1 - prog * 0.4));
+          var bx = pad + k * (bw + gap);
+          var bg2 = sctx.createLinearGradient(0, baseY - bh, 0, baseY);
+          bg2.addColorStop(0, TH.primary); bg2.addColorStop(1, "rgba(0,0,0,0)");
+          sctx.globalAlpha = 0.8;
+          sctx.fillStyle = bg2;
+          sctx.fillRect(bx, baseY - bh, bw, bh);
+          sctx.globalAlpha = 1;
+        }
+      }
+
+      function frame() {
+        if (stopped) return;
+        raf = requestAnimationFrame(frame);
+        var rect = panelEl.getBoundingClientRect();
+        if (rect.width < 40 || rect.height < 40) return stop();   /* 面板被关闭 → 收场 */
+        var st = overlay.style;
+        st.left = rect.left + "px"; st.top = rect.top + "px";
+        st.width = rect.width + "px"; st.height = rect.height + "px";
+        st.borderRadius = (window.getComputedStyle ? getComputedStyle(panelEl).borderRadius : "14px") || "14px";
+
+        var gw = Math.max(1, Math.round(rect.width * Math.min(window.devicePixelRatio || 1, 2)));
+        var gh = Math.max(1, Math.round(rect.height * Math.min(window.devicePixelRatio || 1, 2)));
+        if (canvas.width !== gw || canvas.height !== gh) { canvas.width = gw; canvas.height = gh; }
+
+        var t = (performance.now() - t0) / 1000;
+        if (settled && !settledAt) settledAt = t;
+        if (!settled && t > 16) { settled = true; ok = true; }     /* 安全阀 */
+        var intensity = settled ? Math.max(0, 1 - Math.max(0, t - settledAt - 0.9) / 0.6) : 1;
+        if (settled && t > settledAt + 1.5) overlay.setAttribute("data-done", "1");
+        if (settled && t > settledAt + 2.1) return stop();
+        var prog = (settled && ok) ? 1 : Math.min(0.94, 0.06 + t / 9);
+
+        paint(t, prog);
+
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, stage);
+        gl.uniform1i(uTex, 0);
+        gl.uniform2f(uRes, canvas.width, canvas.height);
+        gl.uniform1f(uTime, t);
+        gl.uniform1f(uProg, prog);
+        gl.uniform1f(uInt, intensity);
+        gl.uniform2f(uOrigin, origin.x, origin.y);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
+
+      bootFxActive = true;
+      document.body.appendChild(overlay);
+      raf = requestAnimationFrame(frame);
+    }
+
     /* ═══════════ 面板主体 ═══════════ */
     function DS4PanelBody() {
       var statusRef = React.useRef(null);
@@ -484,15 +787,16 @@ window.__ModuleLoader__.load({
       var running = st ? st.running : null;
       var busy = busyRef.current;
 
-      var doControl = function (action) {
+      var doControl = function (action, ev) {
         busyRef.current = action;
         msgRef.current = { kind: "busy", text: (action === "start" ? "启动" : action === "stop" ? "停止" : "重启") + "中…加载权重与预热最长约 2 分钟" };
         force();
-        fetchJson(CONTROL_URL, {
+        var req = fetchJson(CONTROL_URL, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ action: action })
-        }).then(function (j) {
+        });
+        req.then(function (j) {
           busyRef.current = null;
           if (j && j.ok) {
             msgRef.current = { kind: "ok", text: action === "start" ? "服务已启动" : action === "stop" ? "服务已停止" : "服务已重启" };
@@ -508,6 +812,27 @@ window.__ModuleLoader__.load({
           msgRef.current = { kind: "err", text: "控制请求失败" };
           force();
         });
+        /* 启动按钮 → CSS-to-Shader 启动动效 */
+        if (action === "start") {
+          var host = (ev && ev.currentTarget && ev.currentTarget.closest)
+            ? ev.currentTarget.closest(".ds4-panel")
+            : (typeof document !== "undefined" && document.querySelector ? document.querySelector(".ds4-panel") : null);
+          if (host) {
+            var o = { x: 0.5, y: 0.85 };
+            if (ev && ev.currentTarget && ev.currentTarget.getBoundingClientRect) {
+              var r1 = host.getBoundingClientRect();
+              var r2 = ev.currentTarget.getBoundingClientRect();
+              o = {
+                x: (r2.left + r2.width / 2 - r1.left) / Math.max(1, r1.width),
+                y: (r2.top + r2.height / 2 - r1.top) / Math.max(1, r1.height)
+              };
+            }
+            mountBootShader(host, {
+              until: req, port: f && f.port, model: f && f.model,
+              threads: f && f.threads, ctxLen: f && f.ctx, origin: o
+            });
+          }
+        }
       };
 
       var doSave = function () {
@@ -569,7 +894,7 @@ window.__ModuleLoader__.load({
         jsx.jsxs("button", {
           className: "ds4-btn ds4-btn--primary",
           disabled: !!busy || running === true,
-          onClick: function () { doControl("start"); },
+          onClick: function (e) { doControl("start", e); },
           children: [busy === "start" ? Spinner() : IcoPlay(13), busy === "start" ? "启动中" : "启动"]
         }),
         jsx.jsxs("button", {
