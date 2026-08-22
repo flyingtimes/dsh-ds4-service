@@ -12,7 +12,7 @@ DeepSeek Harness **DS4 服务控制插件**：在 Web GUI 侧栏一键**开启 /
 | ⚙️ 参数可视化 | 表单配置 start.sh 全部参数：模型、端口、上下文、线程、KV 目录/上限、DSpark 配套模型、预热权重等 |
 | 📜 实时日志 | 面板内滚动查看 `serviceDir/logs/ds4-server.err|.log`，自动滚底、成功/失败行着色 |
 | 🌗 深浅双模式 | 完整跟随 DSH 通用设置的 深色 / 浅色 / 跟随系统，即时切换无需刷新 |
-| 📦 自带资产 | 插件携带 `assets/ds4-server` 二进制 + `assets/start.sh`；`deployAssets=true` 时自动部署到缺失的 serviceDir |
+| 📦 自带资产 | 插件携带 `assets/ds4-server` 二进制 + `assets/start.sh` + `assets/download.sh` 模型下载脚本；`deployAssets=true` 时自动部署缺失的 serviceDir |
 | 🔒 安全围栏 | CSRF / DNS 重绑定防护、并发互斥、白名单校验、无 shell 注入面 |
 | 🔌 HTTP API | 状态 / 配置读写 / 控制 / 日志 四个路由，GUI 全部通过它们工作 |
 
@@ -28,7 +28,8 @@ dsh-ds4-plugin/
 ├── config.example.json   # 配置模板（含逐项 _comment）
 ├── assets/
 │   ├── ds4-server        # 自带的 ds4 二进制（arm64）
-│   └── start.sh          # 自带的启动脚本（与项目里手调版同源）
+│   ├── start.sh          # 自带的启动脚本（与项目里手调版同源）
+│   └── download.sh       # 模型下载脚本（hf-mirror/aria2c，断点续传 + sha-256 校验）
 └── test/
     ├── guard-test.mjs    # 安全守卫攻击矩阵（11 用例）
     └── render-smoke.mjs  # 客户端组件树渲染冒烟
@@ -205,13 +206,13 @@ body[data-ds-dark-theme] .ds4-launch {
 | 字段 | 说明 |
 | --- | --- |
 | `serviceDir` | 服务运行目录；默认 `~/code/ds4-on-mac`。设成空目录时插件自动部署自带二进制+脚本，实现完全自包含 |
-| `model` | 模型文件（相对 serviceDir 或绝对路径），默认 `ds4flash.gguf` |
+| `model` | 模型文件，默认 `{{assets}}/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128.gguf`。三种写法：相对 serviceDir、绝对路径、`{{assets}}` 占位符（=插件 assets 目录，`assets/download.sh` 下载后即指向它） |
 | `port` | 监听端口，默认 `8000` |
 | `ctx` | 上下文长度 `-c`，默认 `393216`（reasoning_effort=max 需要） |
 | `threads` | 主机辅助线程 `-t`，默认 `20` |
 | `kvDir` | `--kv-disk-dir` KV 持久化目录 |
 | `kvSpaceMb` | `--kv-disk-space-mb` 上限 MB，默认 `65536` |
-| `mtp` | DSpark 配套模型 `--mtp`；留空禁用 |
+| `mtp` | DSpark 配套模型 `--mtp`，默认 `{{assets}}/…-DSpark-support.gguf`；留空禁用（下载: `assets/download.sh --dspark`） |
 | `dspark` | 启用 `--dspark` 投机解码，默认 `false`（M2 Ultra 实测更慢） |
 | `warm` | 启用 `--warm-weights` 预热映射页，默认 `true` |
 | `deployAssets` | 缺资产时自动部署自带二进制+脚本，默认 `true` |
@@ -247,6 +248,32 @@ pnpm --dir ~/.dsh/profiles/web add --link ~/code/dsh-ds4-plugin
 然后 `pnpm --dir ~/.dsh/profiles/web install`。包声明 `dsh.bundle.patch`（服务端）+ `dsh.client`（Web 客户端），重启 `dsh web` 后侧栏出现「DS4 服务」入口。
 
 > 开发迭代：`client.js` 由服务器实时从磁盘分发（`no-cache`），**刷新页面即生效**；`index.js`（服务端）改动需重启 `dsh web`。
+
+## 模型下载（assets/download.sh）
+
+默认配置的 `model`/`mtp` 指向 `{{assets}}/`（= 插件 `assets/` 目录），模型用自带脚本下载到那里即可，**无需任何手工符号链接**：
+
+```bash
+cd ~/code/dsh-ds4-plugin/assets
+
+./download.sh              # 只下主模型（~96 GB，默认配置指向它）
+./download.sh --dspark     # 主模型 + DSpark 配套模型（另 ~6.8 GB，开 dspark 才需要）
+./download.sh --force      # 跳过磁盘剩余空间检查
+```
+
+| 特性 | 说明 |
+| --- | --- |
+| 下载源 | 默认 `https://hf-mirror.com`（国内镜像）；海外直连 `HF_ENDPOINT=https://huggingface.co ./download.sh` |
+| 引擎 | `aria2c` 优先（8 线程分块 + 下载完内联校验）；未安装回退 `curl -C -` 单线程续传（`brew install aria2` 加速） |
+| 校验 | 内置 sha-256（主模型 `2cfc36b7…`，配套 `cd8593a2…`），curl 模式下到 `.part` 校验通过才改名，杜绝半截文件 |
+| 续传 | 两引擎都支持断点续传，中断后重跑脚本即可继续 |
+| 幂等 | 已完整存在且校验标记通过的文件自动跳过（避免每次重算 96GB 哈希） |
+| 空间检查 | 启动前比对 `df` 剩余空间（主模型 + 可选配套），不足即拒绝，`--force` 可越过 |
+| 入库隔离 | 下载产物被 `.gitignore` 排除（`assets/*.gguf` 等），不会被误提交 |
+
+仓库：`apetersson/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128`。
+
+> 已有 `~/code/ds4-on-mac/gguf/` 下的模型？不必重复下载——把 `model` 改回 `ds4flash.gguf`（相对 serviceDir）或绝对路径即可，两种写法都支持。
 
 ## 开发与测试
 

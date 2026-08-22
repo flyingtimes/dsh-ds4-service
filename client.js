@@ -611,7 +611,7 @@ window.__ModuleLoader__.load({
       var cfgCards = [
         { title: "服务与模型", rows: [
           { label: "服务目录", title: "服务运行目录；缺二进制/脚本时插件会把自带的部署过去", mono: true, k: "serviceDir" },
-          { label: "模型", title: "模型文件，相对 serviceDir 或绝对路径", mono: true, k: "model" },
+          { label: "模型", title: "模型文件：相对 serviceDir、绝对路径，或 {{assets}} 占位符（=插件 assets 目录，用 assets/download.sh 下载）", mono: true, k: "model" },
           { label: "端口", title: "监听端口", num: true, min: 1, max: 65535, k: "port" }
         ] },
         { title: "上下文与线程", rows: [
@@ -623,7 +623,7 @@ window.__ModuleLoader__.load({
           { label: "KV 上限", title: "--kv-disk-space-mb 上限", num: true, min: 16, max: 1000000, k: "kvSpaceMb", unit: "MB" }
         ] },
         { title: "DSpark 与预热", rows: [
-          { label: "MTP 模型", title: "DSpark 配套模型 --mtp，留空禁用", mono: true, k: "mtp" },
+          { label: "MTP 模型", title: "DSpark 配套模型 --mtp，支持 {{assets}} 占位符；留空禁用（下载: assets/download.sh --dspark）", mono: true, k: "mtp" },
           { label: "DSpark", title: "投机解码 --dspark；M2 Ultra 实测更慢，默认关", switch: true, k: "dspark" },
           { label: "预热权重", title: "--warm-weights 预触全部映射页；启动变慢换首请求不缺页", switch: true, k: "warm" },
           { label: "日志行数", title: "日志面板读取行数", num: true, min: 1, max: 500, k: "logLines" }

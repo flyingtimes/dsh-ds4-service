@@ -34,19 +34,22 @@ const LOGS_PATH = '/plugin-api/ds4/logs';
 
 const DEFAULTS = {
   serviceDir: '/Users/clark/code/ds4-on-mac',
-  model: 'ds4flash.gguf',
+  model: '{{assets}}/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128.gguf',
   port: 8000,
   ctx: 393216,
   threads: 20,
   kvDir: '/Users/clark/.ds4/server-kv',
   kvSpaceMb: 65536,
-  mtp: 'gguf/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128-DSpark-support.gguf',
+  mtp: '{{assets}}/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128-DSpark-support.gguf',
   dspark: false,
   warm: true,
   deployAssets: true,
   logLines: 30,
   statusPollMs: 5000,
 };
+
+/** 展开 model/mtp 里的 {{assets}} 占位符为插件 assets 目录绝对路径 */
+const resolveAssetToken = (value) => String(value || '').replace(/\{\{assets\}\}/gi, ASSETS_DIR);
 
 /* ---------------- 基础工具 ---------------- */
 
@@ -207,17 +210,17 @@ async function getStatus(config, { heal = false } = {}) {
   return { running: false, pid: null, source: 'none', command: null };
 }
 
-/** 把配置映射成 start.sh 的环境变量覆盖 */
+/** 把配置映射成 start.sh 的环境变量覆盖（{{assets}} 展开为绝对路径） */
 function buildEnv(config) {
   const env = { ...process.env };
   const set = (k, v) => { env[k] = String(v); };
-  set('MODEL', config.model);
+  set('MODEL', resolveAssetToken(config.model));
   set('PORT', config.port);
   set('CTX', config.ctx);
   set('THREADS', config.threads);
   set('KV_DIR', config.kvDir);
   set('KV_SPACE_MB', config.kvSpaceMb);
-  if (config.mtp && String(config.mtp).trim()) set('MTP', config.mtp);
+  if (config.mtp && String(config.mtp).trim()) set('MTP', resolveAssetToken(config.mtp));
   set('DSPARK', config.dspark ? '1' : '0');
   set('WARM', config.warm ? '1' : '0');
   return env;
@@ -604,5 +607,5 @@ export const inject = [];
 // 测试/诊断用内部导出（不影响 cordis 加载）
 export const internals = {
   getStatus, doStart, doStop, doRestart, findServerProcesses, loadConfig,
-  buildAllowedAuthorities, requestTrusted, registerRoutes,
+  buildAllowedAuthorities, requestTrusted, registerRoutes, buildEnv, resolveAssetToken,
 };

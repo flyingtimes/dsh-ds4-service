@@ -1,3 +1,9 @@
 node_modules/
 .DS_Store
 *.log
+
+# assets/download.sh 下载的模型与中间产物（96GB+，绝不入库）
+assets/*.gguf
+assets/*.gguf.part
+assets/.verified-*.ok
+assets/download-status.log
