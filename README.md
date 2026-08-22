@@ -16,6 +16,12 @@ DeepSeek Harness **DS4 服务控制插件**：在 Web GUI 侧栏一键**开启 /
 | :---: | :---: |
 | ![浅色主题 · 控制页](docs/light-control.png) | ![浅色主题 · 参数页](docs/light-params.png) |
 
+**按钮动效**（真实录制：Playwright 驱动 Chromium 操作 GUI，后端为真实 ds4-server 启停——启动实测 10.3s、停止 0.7s，动效随请求落定自然收场）：
+
+| ▶ 启动（冷开机 · BOOT） | ⏹ 停止（SHUTDOWN · CRT 断电坍缩） |
+| :---: | :---: |
+| ![启动动效演示](docs/demo-start.mp4) | ![停止动效演示](docs/demo-stop.mp4) |
+
 ## 功能总览
 
 | 类别 | 能力 |
@@ -132,7 +138,7 @@ shadcn 的核心思想：所有颜色抽象成语义变量（`--background`/`--c
 
 ## 控制着色器动效（CSS-to-Shader）
 
-点击「启动 / 重启 / 停止」时面板上会播放对应模式的 WebGL 着色器动效，技术路线学习自 [html-in-canvas.dev 的 CSS-to-Shader 案例](https://html-in-canvas.dev/demos/css-to-shader/)（DOM → canvas 纹理 → 片元着色器）：
+点击「启动 / 重启 / 停止」时面板上会播放对应模式的 WebGL 着色器动效（真实录屏见[界面预览](#界面预览)），技术路线学习自 [html-in-canvas.dev 的 CSS-to-Shader 案例](https://html-in-canvas.dev/demos/css-to-shader/)（DOM → canvas 纹理 → 片元着色器）：
 
 ```
 纹理源 ──→ 2D 画布(stage) ──→ WebGL 纹理 ──→ 片元着色器 ──→ 面板区域上的 overlay
