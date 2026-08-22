@@ -328,6 +328,20 @@ body[data-ds-dark-theme] .ds4-launch {
 
 ## 安装
 
+### 一键安装（npm）
+
+已发布到 npm：[`dsh-ds4-service`](https://www.npmjs.com/package/dsh-ds4-service)，一条命令安装进 web profile：
+
+```bash
+dsh plugin --profile web add dsh-ds4-service
+```
+
+安装后重启 `dsh web`，侧栏即出现「DS4 服务」入口。插件自带 `ds4-server` 二进制与 `start.sh`；首次启动前把模型下载到 `assets/`（见[模型下载](#模型下载assetsdownloadsh)），或把 `model` 配置指向你已有的模型路径。
+
+> 默认配置完全可移植：`serviceDir` 默认 `~/code/ds4-on-mac`（不存在时自动部署自带资产，自包含运行），`kvDir` 默认 `~/.ds4/server-kv`，均支持 `~/` 写法。
+
+### 从源码安装（本地开发）
+
 前置：本机已构建好 `ds4-server`（本项目已自带一份于 `assets/`，也可用你构建的版本替换）。
 
 ```bash

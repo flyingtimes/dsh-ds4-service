@@ -22,6 +22,7 @@
 
 import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -33,12 +34,14 @@ const CONTROL_PATH = '/plugin-api/ds4/control';
 const LOGS_PATH = '/plugin-api/ds4/logs';
 
 const DEFAULTS = {
-  serviceDir: '/Users/clark/code/ds4-on-mac',
+  // 可移植默认值：任意机器上都指向 $HOME 下的等价路径；serviceDir 不存在时
+  // deployAssets 会自动部署自带二进制与脚本（自包含模式）。
+  serviceDir: path.join(homedir(), 'code', 'ds4-on-mac'),
   model: '{{assets}}/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128.gguf',
   port: 8000,
   ctx: 393216,
   threads: 20,
-  kvDir: '/Users/clark/.ds4/server-kv',
+  kvDir: path.join(homedir(), '.ds4', 'server-kv'),
   kvSpaceMb: 65536,
   mtp: '{{assets}}/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128-DSpark-support.gguf',
   dspark: false,
@@ -118,7 +121,12 @@ function runCommand(cmd, args, { cwd, timeoutMs, signal, env } = {}) {
 
 /* ---------------- 服务部署与状态 ---------------- */
 
-const serviceDir = (config) => path.resolve(String(config.serviceDir || '').trim() || DEFAULTS.serviceDir);
+/** 展开 ~/ 前缀（homedir），让示例配置可原样复制使用 */
+const expandHome = (p) => {
+  const s = String(p ?? '');
+  return s === '~' ? homedir() : s.startsWith('~/') ? path.join(homedir(), s.slice(2)) : s;
+};
+const serviceDir = (config) => path.resolve(expandHome(String(config.serviceDir || '').trim() || DEFAULTS.serviceDir));
 const startScript = (config) => path.join(serviceDir(config), 'start.sh');
 const pidFile = (config) => path.join(serviceDir(config), 'logs', 'ds4-server.pid');
 const logOut = (config) => path.join(serviceDir(config), 'logs', 'ds4-server.log');
@@ -218,7 +226,7 @@ function buildEnv(config) {
   set('PORT', config.port);
   set('CTX', config.ctx);
   set('THREADS', config.threads);
-  set('KV_DIR', config.kvDir);
+  set('KV_DIR', expandHome(config.kvDir || DEFAULTS.kvDir));
   set('KV_SPACE_MB', config.kvSpaceMb);
   if (config.mtp && String(config.mtp).trim()) set('MTP', resolveAssetToken(config.mtp));
   set('DSPARK', config.dspark ? '1' : '0');

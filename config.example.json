@@ -1,10 +1,10 @@
 {
-  "serviceDir": "/Users/clark/code/ds4-on-mac",
+  "serviceDir": "~/code/ds4-on-mac",
   "model": "{{assets}}/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128.gguf",
   "port": 8000,
   "ctx": 393216,
   "threads": 20,
-  "kvDir": "/Users/clark/.ds4/server-kv",
+  "kvDir": "~/.ds4/server-kv",
   "kvSpaceMb": 65536,
   "mtp": "{{assets}}/DeepSeek-V4-Flash-0731-Abliterated-DS4-Quality128-DSpark-support.gguf",
   "dspark": false,

@@ -14,9 +14,9 @@
     "client.js",
     "cordis.patch.yml",
     "config.example.json",
-    "config.json",
     "assets",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "dsh": {
     "bundle": {
@@ -32,8 +32,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/clarkchan/dsh-ds4-service.git"
+    "url": "git+https://github.com/flyingtimes/dsh-ds4-service.git"
   },
+  "bugs": {
+    "url": "https://github.com/flyingtimes/dsh-ds4-service/issues"
+  },
+  "homepage": "https://github.com/flyingtimes/dsh-ds4-service#readme",
   "license": "MIT",
   "keywords": [
     "dsh",
